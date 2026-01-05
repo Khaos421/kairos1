@@ -87,6 +87,7 @@
         .btn-add-item { background: #f3e5f5; border: none; padding: 10px; width: 100%; margin-top: 10px; border-radius: 8px; }
 
         .btn-save { background: var(--pastel-green); border: none; padding: 15px; width: 100%; border-radius: 8px; font-size: 1rem; margin-top: 20px; }
+        .btn-update { background: var(--pastel-blue); border: none; padding: 15px; width: 100%; border-radius: 8px; font-size: 1rem; margin-top: 20px; display: none; }
 
         .order-card {
             background: white;
@@ -105,9 +106,10 @@
         .status-pending { background: var(--status-pending); }
         .status-done { background: var(--status-done); }
 
+        .edit-btn { background: #e3f2fd; border: none; color: #1e88e5; padding: 5px 12px; border-radius: 15px; font-size: 0.8rem; margin-left: 10px; }
+
         .ref-photo { width: 100px; height: 100px; object-fit: cover; border-radius: 10px; border: 2px solid var(--pastel-pink); }
 
-        /* BARRA DE TOTAL REPARADA */
         .summary-bar {
             position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
             background: white; padding: 15px 50px; border-radius: 100px;
@@ -126,13 +128,14 @@
 
 <header>
     <h1>Kairos</h1>
-    <p>Gestión de Pedidos y Ganancias Real</p>
+    <p>Gestión de Pedidos Múltiples</p>
 </header>
 
 <div class="container">
     <section class="order-form">
-        <h2>Nuevo Pedido</h2>
+        <h2 id="formTitle">Nuevo Pedido</h2>
         <form id="bakeryForm">
+            <input type="hidden" id="editId">
             <label>Nombre de la Clienta</label>
             <input type="text" id="clientName" required>
             
@@ -140,7 +143,7 @@
             <input type="date" id="date" required>
 
             <div class="item-builder">
-                <label>🛍️ Productos (puedes añadir varios)</label>
+                <label>🛍️ Productos</label>
                 <div style="display: flex; gap: 5px;">
                     <select id="prodSelect" style="flex:2">
                         <option>Tortas</option><option>Cupcakes</option><option>Mesa Dulce</option>
@@ -165,7 +168,8 @@
             <label>Foto (Link)</label>
             <input type="text" id="photo">
 
-            <button type="submit" class="btn-save">💾 GUARDAR PEDIDO</button>
+            <button type="submit" id="saveBtn" class="btn-save">💾 GUARDAR PEDIDO</button>
+            <button type="button" id="updateBtn" class="btn-update" onclick="updateOrder()">🔄 ACTUALIZAR PEDIDO</button>
         </form>
     </section>
 
@@ -222,11 +226,64 @@
         };
 
         orders.push(order);
+        resetForm();
+        save();
+    });
+
+    function editOrder(id) {
+        const order = orders.find(o => o.id === id);
+        if(!order) return;
+
+        // Llenar formulario
+        document.getElementById('editId').value = order.id;
+        document.getElementById('clientName').value = order.client;
+        document.getElementById('date').value = order.date;
+        document.getElementById('amount').value = order.amount;
+        document.getElementById('address').value = order.address;
+        document.getElementById('details').value = order.details;
+        document.getElementById('photo').value = order.photo;
+        
+        currentItems = [...order.items];
+        updateTemp();
+
+        // Cambiar botones
+        document.getElementById('formTitle').innerText = "Editando Pedido";
+        document.getElementById('saveBtn').style.display = "none";
+        document.getElementById('updateBtn').style.display = "block";
+        
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function updateOrder() {
+        const id = parseInt(document.getElementById('editId').value);
+        orders = orders.map(o => {
+            if(o.id === id) {
+                return {
+                    ...o,
+                    client: document.getElementById('clientName').value,
+                    date: document.getElementById('date').value,
+                    items: [...currentItems],
+                    amount: parseFloat(document.getElementById('amount').value) || 0,
+                    address: document.getElementById('address').value,
+                    details: document.getElementById('details').value,
+                    photo: document.getElementById('photo').value
+                };
+            }
+            return o;
+        });
+
+        resetForm();
+        save();
+    }
+
+    function resetForm() {
         currentItems = [];
         document.getElementById('tempItems').innerHTML = "";
-        save();
-        this.reset();
-    });
+        document.getElementById('bakeryForm').reset();
+        document.getElementById('formTitle').innerText = "Nuevo Pedido";
+        document.getElementById('saveBtn').style.display = "block";
+        document.getElementById('updateBtn').style.display = "none";
+    }
 
     function save() {
         localStorage.setItem('kairos_v5', JSON.stringify(orders));
@@ -248,16 +305,11 @@
     function render() {
         const container = document.getElementById('displayOrders');
         container.innerHTML = "";
-        
-        let sumTotal = 0; // REPARACIÓN: Reiniciamos la suma siempre
-
+        let sumTotal = 0;
         const sorted = [...orders].sort((a,b) => new Date(a.date) - new Date(b.date));
 
         sorted.forEach(o => {
-            // REPARACIÓN: Sumamos solo si está entregado y nos aseguramos que sea número
-            if(o.delivered) {
-                sumTotal += Number(o.amount);
-            }
+            if(o.delivered) sumTotal += Number(o.amount);
 
             const card = document.createElement('div');
             card.className = `order-card ${o.delivered ? 'delivered' : ''}`;
@@ -271,17 +323,18 @@
                         ${o.details ? `<div class="details-box"><b>Notas:</b> ${o.details}</div>` : ''}
                         <p style="font-size:0.8rem; color:#888">📍 ${o.address || 'Retira'}</p>
                         <p><b>Monto: $${Number(o.amount).toLocaleString('de-DE')}</b></p>
-                        <button onclick="toggle(${o.id})" class="status-btn ${o.delivered ? 'status-done' : 'status-pending'}">
-                            ${o.delivered ? '✅ ENTREGADO' : '⏳ PENDIENTE'}
-                        </button>
+                        <div style="display:flex; align-items:center; gap:10px">
+                            <button onclick="toggle(${o.id})" class="status-btn ${o.delivered ? 'status-done' : 'status-pending'}">
+                                ${o.delivered ? '✅ ENTREGADO' : '⏳ PENDIENTE'}
+                            </button>
+                            <button onclick="editOrder(${o.id})" class="edit-btn">✏️ Editar</button>
+                        </div>
                     </div>
                     ${o.photo ? `<img src="${o.photo}" class="ref-photo">` : ''}
                 </div>
             `;
             container.appendChild(card);
         });
-
-        // REPARACIÓN: Actualizar el texto del total con formato limpio
         document.getElementById('totalEarnings').innerText = `$ ${sumTotal.toLocaleString('de-DE')}`;
     }
 </script>
